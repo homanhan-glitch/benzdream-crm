@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --bg: #0b0d12;
+  --bg-2: #0f1219;
+  --surface: #14181f;
+  --surface-2: #181d27;
+  --surface-3: #1f242f;
+  --line: #262c39;
+  --line-strong: #323948;
+  --fg: #ececec;
+  --muted: #a3acbb;
+  --subtle: #6b7385;
+  --gold: #c9a96e;
+  --gold-2: #a68b4b;
+  --gold-3: #e8d5a8;
+  --hot: #f87171;
+  --warm: #fb923c;
+  --cool: #34d399;
+  --info: #60a5fa;
+  --purple: #a78bfa;
+  --teal: #22d3ee;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-gold: var(--gold);
+  --color-gold-2: var(--gold-2);
+  --color-gold-3: var(--gold-3);
+  --color-hot: var(--hot);
+  --color-warm: var(--warm);
+  --color-cool: var(--cool);
+  --color-info: var(--info);
+  --color-purple: var(--purple);
+  --color-teal: var(--teal);
+  --font-sans: var(--font-noto), system-ui, -apple-system, "Segoe UI",
+    "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--fg);
+  min-height: 100%;
+  font-family: var(--font-noto), system-ui, -apple-system, "Segoe UI",
+    "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  font-feature-settings: "tnum" 1, "ss01" 1;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--line-strong);
+}
+
+.kanban-scroll {
+  scrollbar-gutter: stable;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.fade-in {
+  animation: fade-in 0.18s ease-out;
+}
+
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+.slide-in-right {
+  animation: slide-in-right 0.22s ease-out;
+}
