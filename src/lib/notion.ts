@@ -1,5 +1,5 @@
 import { Client } from "@notionhq/client";
-import type { Customer, FetchResult } from "./types";
+import type { Customer, FetchResult, ConsultLog, DnState } from "./types";
 import { mapStage } from "./stages";
 import { parseGrade, parseHeat, parseRank } from "./utils";
 import { MOCK_CUSTOMERS } from "./mock";
@@ -58,6 +58,17 @@ function getPlain(prop: RichProp | undefined): string {
   }
 }
 
+function getRelationIds(prop: RichProp | undefined): string[] {
+  if (!prop || prop.type !== "relation") return [];
+  const arr = (prop.relation as Array<{ id: string }>) ?? [];
+  return arr.map((r) => r.id);
+}
+
+function getCheckbox(prop: RichProp | undefined): boolean {
+  if (!prop || prop.type !== "checkbox") return false;
+  return prop.checkbox === true;
+}
+
 type NotionPage = {
   id: string;
   url: string;
@@ -69,6 +80,18 @@ type NotionPage = {
 function pageToCustomer(page: NotionPage): Customer {
   const p = page.properties;
   const get = (key: string) => getPlain(p[key]);
+
+  const dn: DnState = {
+    newD3: getCheckbox(p["신규D+3✓"]),
+    newD7: getCheckbox(p["신규D+7✓"]),
+    newD14: getCheckbox(p["신규D+14✓"]),
+    newD30: getCheckbox(p["신규D+30✓"]),
+    delivD1: getCheckbox(p["출고D+1✓"]),
+    delivD7: getCheckbox(p["출고D+7✓"]),
+    delivD30: getCheckbox(p["출고D+30✓"]),
+    delivD180: getCheckbox(p["출고D+180✓"]),
+    delivD365: getCheckbox(p["출고D+365✓"]),
+  };
 
   const stageRaw = get("관리단계");
   return {
@@ -104,7 +127,36 @@ function pageToCustomer(page: NotionPage): Customer {
     deliveredModel: get("출고모델") || undefined,
     notionUrl: page.url,
     createdAt: page.created_time?.slice(0, 10),
+    dn,
+    logIds: getRelationIds(p["상담로그"]),
+    scheduleIds: getRelationIds(p["액션스케줄"]),
   };
+}
+
+async function resolveDataSourceId(notion: Client, dbId: string): Promise<string | null> {
+  let resolvedDbId = dbId;
+  try {
+    await notion.databases.retrieve({ database_id: dbId });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes("is a page") || msg.includes("not a database")) {
+      const children = await notion.blocks.children.list({
+        block_id: dbId,
+        page_size: 100,
+      });
+      type Block = { type: string; id: string };
+      const blocks = children.results as unknown as Block[];
+      const dbBlock = blocks.find((b) => b.type === "child_database");
+      if (!dbBlock) return null;
+      resolvedDbId = dbBlock.id;
+    } else {
+      throw e;
+    }
+  }
+  const dbInfo = (await notion.databases.retrieve({
+    database_id: resolvedDbId,
+  })) as { data_sources?: Array<{ id: string }> };
+  return dbInfo.data_sources?.[0]?.id ?? null;
 }
 
 export async function fetchCards(): Promise<FetchResult> {
@@ -116,71 +168,114 @@ export async function fetchCards(): Promise<FetchResult> {
       customers: MOCK_CUSTOMERS,
       source: "mock",
       notionError: "NOTION_TOKEN 또는 NOTION_DB_ID 미설정 — mock 데이터",
+      totalFetched: MOCK_CUSTOMERS.length,
     };
   }
 
   try {
     const notion = new Client({ auth: token });
-
-    let resolvedDbId = dbId;
-    try {
-      await notion.databases.retrieve({ database_id: dbId });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("is a page") || msg.includes("not a database")) {
-        const children = await notion.blocks.children.list({
-          block_id: dbId,
-          page_size: 100,
-        });
-        type Block = { type: string; id: string };
-        const blocks = children.results as unknown as Block[];
-        const dbBlock = blocks.find((b) => b.type === "child_database");
-        if (!dbBlock) {
-          return {
-            customers: MOCK_CUSTOMERS,
-            source: "mock",
-            notionError:
-              "Notion ID가 페이지를 가리키고 그 안에 DB 없음. DB URL을 NOTION_DB_ID로 사용.",
-          };
-        }
-        resolvedDbId = dbBlock.id;
-      } else {
-        throw e;
-      }
-    }
-
-    const dbInfo = (await notion.databases.retrieve({
-      database_id: resolvedDbId,
-    })) as { data_sources?: Array<{ id: string }> };
-    const dataSourceId = dbInfo.data_sources?.[0]?.id;
+    const dataSourceId = await resolveDataSourceId(notion, dbId);
     if (!dataSourceId) {
       return {
         customers: MOCK_CUSTOMERS,
         source: "mock",
-        notionError:
-          "DB에 data source 없음 — Integration이 DB에 공유됐는지 확인 필요",
+        notionError: "DB 또는 data source를 찾지 못함 — Integration 권한 확인",
+        totalFetched: MOCK_CUSTOMERS.length,
       };
     }
 
-    const res = await notion.dataSources.query({
-      data_source_id: dataSourceId,
-      page_size: 100,
-    });
-    const pages = res.results as unknown as NotionPage[];
-    const customers = pages
-      .filter((p) => p && p.properties)
-      .map(pageToCustomer);
+    const all: NotionPage[] = [];
+    let cursor: string | undefined;
+    let pageCount = 0;
+    const MAX_PAGES = 20; // safety: 100 * 20 = 2000 cards
+    do {
+      const res = await notion.dataSources.query({
+        data_source_id: dataSourceId,
+        page_size: 100,
+        start_cursor: cursor,
+      });
+      all.push(...(res.results as unknown as NotionPage[]));
+      cursor = res.has_more ? (res.next_cursor ?? undefined) : undefined;
+      pageCount += 1;
+    } while (cursor && pageCount < MAX_PAGES);
 
+    const customers = all.filter((p) => p && p.properties).map(pageToCustomer);
     if (customers.length === 0) {
       return {
         customers: MOCK_CUSTOMERS,
         source: "mock",
         notionError: "Notion DB가 비어있거나 권한 부족",
+        totalFetched: 0,
       };
     }
-    return { customers, source: "notion" };
+    return { customers, source: "notion", totalFetched: customers.length };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { customers: MOCK_CUSTOMERS, source: "mock", notionError: msg };
+    return {
+      customers: MOCK_CUSTOMERS,
+      source: "mock",
+      notionError: msg,
+      totalFetched: MOCK_CUSTOMERS.length,
+    };
+  }
+}
+
+export async function fetchConsultLogs(ids: string[]): Promise<ConsultLog[]> {
+  const token = process.env.NOTION_TOKEN;
+  if (!token || ids.length === 0) return [];
+  const notion = new Client({ auth: token });
+
+  const results = await Promise.allSettled(
+    ids.map((id) => notion.pages.retrieve({ page_id: id })),
+  );
+
+  const logs: ConsultLog[] = [];
+  for (const r of results) {
+    if (r.status !== "fulfilled") continue;
+    const page = r.value as unknown as NotionPage & { url: string };
+    const props = page.properties ?? {};
+    let title = "";
+    let date = "";
+    let preview = "";
+    for (const [key, val] of Object.entries(props)) {
+      if (val.type === "title" && !title) {
+        title = getPlain(val);
+      }
+      if (val.type === "date" && !date) {
+        date = getPlain(val);
+      }
+      if (val.type === "rich_text" && !preview) {
+        preview = getPlain(val).slice(0, 240);
+      }
+    }
+    logs.push({
+      id: page.id,
+      title: title || "(제목 없음)",
+      date,
+      url: page.url,
+      preview: preview || undefined,
+    });
+  }
+  logs.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  return logs;
+}
+
+export async function updateStageInNotion(
+  pageId: string,
+  notionStageName: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const token = process.env.NOTION_TOKEN;
+  if (!token) return { ok: false, error: "NOTION_TOKEN 없음" };
+  try {
+    const notion = new Client({ auth: token });
+    await notion.pages.update({
+      page_id: pageId,
+      properties: {
+        관리단계: { select: { name: notionStageName } },
+      },
+    });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }

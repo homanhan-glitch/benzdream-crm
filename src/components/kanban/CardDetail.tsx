@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
-import { X, Phone, MessageSquare, ExternalLink } from "lucide-react";
-import type { Customer } from "@/lib/types";
+import { useEffect, useState } from "react";
+import { X, Phone, MessageSquare, ExternalLink, Check } from "lucide-react";
+import type { ConsultLog, Customer } from "@/lib/types";
 import { STAGE_BY_ID } from "@/lib/stages";
 import {
+  allMilestones,
+  cn,
   formatDueDay,
   formatRelativeDay,
   HEAT_META,
@@ -17,6 +19,11 @@ type Props = {
 };
 
 export function CardDetail({ customer: c, onClose }: Props) {
+  const [logs, setLogs] = useState<ConsultLog[] | null>(null);
+  const [logsState, setLogsState] = useState<"idle" | "loading" | "error">(
+    "idle",
+  );
+
   useEffect(() => {
     function onEsc(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
@@ -25,8 +32,34 @@ export function CardDetail({ customer: c, onClose }: Props) {
     return () => window.removeEventListener("keydown", onEsc);
   }, [onClose]);
 
+  useEffect(() => {
+    if (c.logIds.length === 0) {
+      setLogs([]);
+      return;
+    }
+    setLogsState("loading");
+    const ctrl = new AbortController();
+    fetch("/api/logs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: c.logIds }),
+      signal: ctrl.signal,
+    })
+      .then(async (res) => {
+        const data = (await res.json()) as { logs: ConsultLog[] };
+        setLogs(data.logs ?? []);
+        setLogsState("idle");
+      })
+      .catch((e) => {
+        if (e.name === "AbortError") return;
+        setLogsState("error");
+      });
+    return () => ctrl.abort();
+  }, [c.logIds]);
+
   const stage = STAGE_BY_ID[c.stage];
   const heatMeta = HEAT_META[c.heat];
+  const milestones = allMilestones(c);
 
   return (
     <>
@@ -47,7 +80,7 @@ export function CardDetail({ customer: c, onClose }: Props) {
                 </span>
               )}
             </div>
-            <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted">
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted">
               <div className="flex items-center gap-1">
                 <span
                   className="h-1.5 w-1.5 rounded-full"
@@ -117,7 +150,10 @@ export function CardDetail({ customer: c, onClose }: Props) {
                       : "—"
               }
             />
-            <Field label="나이대 / 성별" value={[c.age, c.gender].filter(Boolean).join(" · ") || "—"} />
+            <Field
+              label="나이대 / 성별"
+              value={[c.age, c.gender].filter(Boolean).join(" · ") || "—"}
+            />
             <Field label="유입경로" value={c.source ?? "—"} />
             <Field label="채널" value={c.channel ?? "—"} />
           </Section>
@@ -182,6 +218,98 @@ export function CardDetail({ customer: c, onClose }: Props) {
             )}
           </Section>
 
+          {milestones.length > 0 && (
+            <Section
+              title={
+                ["delivered", "aftercare", "long_touch"].includes(c.stage)
+                  ? "출고 D+N 안부 (5터치)"
+                  : "신규 D+N 팔로업"
+              }
+            >
+              <div className="grid grid-cols-5 gap-1.5">
+                {milestones.map((m) => {
+                  const overdue = !m.done && m.daysUntil < 0;
+                  const due = !m.done && m.daysUntil >= 0 && m.daysUntil <= 3;
+                  return (
+                    <div
+                      key={m.key}
+                      className={cn(
+                        "flex flex-col items-center gap-0.5 rounded border px-1 py-1.5 text-[10px]",
+                        m.done && "border-cool/30 bg-cool/10 text-cool",
+                        !m.done &&
+                          overdue &&
+                          "border-hot/30 bg-hot/10 text-hot",
+                        !m.done &&
+                          due &&
+                          "border-warm/30 bg-warm/10 text-warm",
+                        !m.done &&
+                          !overdue &&
+                          !due &&
+                          "border-line bg-bg-2 text-subtle",
+                      )}
+                    >
+                      <span className="font-semibold">{m.label}</span>
+                      <span className="text-[9px] opacity-80">
+                        {m.done ? (
+                          <Check size={10} />
+                        ) : m.daysUntil === 0 ? (
+                          "오늘"
+                        ) : m.daysUntil < 0 ? (
+                          `${-m.daysUntil}일`
+                        ) : (
+                          `+${m.daysUntil}d`
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </Section>
+          )}
+
+          <Section title="상담 이력">
+            {logsState === "loading" && (
+              <p className="text-[12px] text-subtle">불러오는 중…</p>
+            )}
+            {logsState === "error" && (
+              <p className="text-[12px] text-hot">
+                상담로그 불러오기 실패
+              </p>
+            )}
+            {logs && logs.length === 0 && logsState === "idle" && (
+              <p className="text-[12px] text-subtle">기록된 상담 없음</p>
+            )}
+            {logs && logs.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                {logs.map((log) => (
+                  <a
+                    key={log.id}
+                    href={log.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block rounded-md border border-line bg-bg-2 px-3 py-2 text-[12px] transition-colors hover:border-gold/40"
+                  >
+                    <div className="mb-0.5 flex items-center justify-between gap-2">
+                      <span className="truncate font-medium text-fg">
+                        {log.title}
+                      </span>
+                      {log.date && (
+                        <span className="shrink-0 text-[10px] text-subtle">
+                          {log.date}
+                        </span>
+                      )}
+                    </div>
+                    {log.preview && (
+                      <p className="line-clamp-2 text-[11px] leading-relaxed text-muted">
+                        {log.preview}
+                      </p>
+                    )}
+                  </a>
+                ))}
+              </div>
+            )}
+          </Section>
+
           {(c.deliveredModel || c.carNumber || c.finalResult) && (
             <Section title="출고 정보">
               {c.deliveredModel && (
@@ -212,7 +340,7 @@ export function CardDetail({ customer: c, onClose }: Props) {
         </div>
 
         <div className="border-t border-line bg-surface-2 px-5 py-3 text-[11px] text-subtle">
-          편집 / 단계 변경은 v0.2에서 Notion으로 직접 동기화됩니다. 지금은 보기 전용.
+          드래그로 단계 이동 시 Notion 관리단계 자동 업데이트. 다른 필드 편집은 v0.3.
         </div>
       </aside>
     </>

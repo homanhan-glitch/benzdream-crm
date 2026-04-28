@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -18,6 +18,7 @@ import { STAGES } from "@/lib/stages";
 import { Column } from "./Column";
 import { Card } from "./Card";
 import { CardDetail } from "./CardDetail";
+import { updateCustomerStage } from "@/app/actions";
 
 type Props = {
   initialCustomers: Customer[];
@@ -25,10 +26,14 @@ type Props = {
   fetchedAt: string;
 };
 
-export function Board({ initialCustomers }: Props) {
+type Toast = { tone: "ok" | "err"; msg: string } | null;
+
+export function Board({ initialCustomers, source }: Props) {
   const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Customer | null>(null);
+  const [toast, setToast] = useState<Toast>(null);
+  const [, startTransition] = useTransition();
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -49,6 +54,13 @@ export function Board({ initialCustomers }: Props) {
   const activeCustomer = activeId
     ? customers.find((c) => c.id === activeId) ?? null
     : null;
+
+  function showToast(t: Toast) {
+    setToast(t);
+    if (t) {
+      setTimeout(() => setToast(null), 3500);
+    }
+  }
 
   function onDragStart(e: DragStartEvent) {
     setActiveId(String(e.active.id));
@@ -72,11 +84,44 @@ export function Board({ initialCustomers }: Props) {
     }
     if (!targetStage) return;
 
+    const before = customers.find((c) => c.id === activeIdStr);
+    if (!before || before.stage === targetStage) return;
+    const previousStage = before.stage;
+    const finalStage = targetStage;
+
     setCustomers((prev) =>
       prev.map((c) =>
-        c.id === activeIdStr ? { ...c, stage: targetStage as StageId } : c,
+        c.id === activeIdStr ? { ...c, stage: finalStage } : c,
       ),
     );
+
+    if (source === "mock") {
+      showToast({
+        tone: "ok",
+        msg: `(mock) ${before.name} → ${stageLabel(finalStage)}`,
+      });
+      return;
+    }
+
+    startTransition(async () => {
+      const res = await updateCustomerStage(activeIdStr, finalStage);
+      if (res.ok) {
+        showToast({
+          tone: "ok",
+          msg: `Notion 동기화: ${before.name} → ${stageLabel(finalStage)}`,
+        });
+      } else {
+        setCustomers((prev) =>
+          prev.map((c) =>
+            c.id === activeIdStr ? { ...c, stage: previousStage } : c,
+          ),
+        );
+        showToast({
+          tone: "err",
+          msg: `동기화 실패 — 원위치: ${res.error ?? ""}`,
+        });
+      }
+    });
   }
 
   return (
@@ -114,10 +159,27 @@ export function Board({ initialCustomers }: Props) {
       </DndContext>
       {selected && (
         <CardDetail
-          customer={selected}
+          customer={
+            customers.find((c) => c.id === selected.id) ?? selected
+          }
           onClose={() => setSelected(null)}
         />
       )}
+      {toast && (
+        <div
+          className={`fixed bottom-6 left-1/2 z-[100] -translate-x-1/2 rounded-md border px-4 py-2 text-[12px] shadow-lg fade-in ${
+            toast.tone === "ok"
+              ? "border-cool/40 bg-cool/15 text-cool"
+              : "border-hot/40 bg-hot/15 text-hot"
+          }`}
+        >
+          {toast.msg}
+        </div>
+      )}
     </>
   );
+}
+
+function stageLabel(id: StageId): string {
+  return STAGES.find((s) => s.id === id)?.label ?? id;
 }

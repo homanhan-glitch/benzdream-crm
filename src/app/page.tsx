@@ -8,7 +8,6 @@ export const revalidate = 0;
 export default async function Home() {
   const result = await fetchCards();
   const fetchedAt = new Date().toISOString();
-  const total = result.customers.length;
 
   const counts = STAGES.map((s) => ({
     id: s.id,
@@ -35,7 +34,10 @@ export default async function Home() {
           <div className="flex items-center gap-3 text-xs text-subtle">
             <span>
               총{" "}
-              <span className="font-semibold text-fg">{total}</span>건
+              <span className="font-semibold text-fg">
+                {result.totalFetched}
+              </span>
+              건
             </span>
             <span className="hidden h-3 w-px bg-line md:inline" />
             <span

@@ -1,5 +1,8 @@
 import type { Customer } from "./types";
 
+type MockSeed = Omit<Customer, "dn" | "logIds" | "scheduleIds"> &
+  Partial<Pick<Customer, "dn" | "logIds" | "scheduleIds">>;
+
 const today = new Date();
 function ago(days: number): string {
   const d = new Date(today);
@@ -12,7 +15,7 @@ function ahead(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export const MOCK_CUSTOMERS: Customer[] = [
+const RAW_MOCKS: MockSeed[] = [
   {
     id: "m1",
     name: "박태윤",
@@ -320,3 +323,10 @@ export const MOCK_CUSTOMERS: Customer[] = [
     notes: "BMW X3 계약. 재방문 가능성 6개월 후.",
   },
 ];
+
+export const MOCK_CUSTOMERS: Customer[] = RAW_MOCKS.map((m) => ({
+  ...m,
+  dn: m.dn ?? {},
+  logIds: m.logIds ?? [],
+  scheduleIds: m.scheduleIds ?? [],
+}));

@@ -10,6 +10,7 @@ import {
   formatRelativeDay,
   HEAT_META,
   maskPhone,
+  nextMilestone,
 } from "@/lib/utils";
 
 type Props = {
@@ -32,6 +33,20 @@ const GRADE_META: Record<string, { label: string; cls: string }> = {
   F: { label: "F", cls: "bg-subtle/15 text-subtle border-line" },
   unknown: { label: "", cls: "" },
 };
+
+function milestoneStyle(daysUntil: number): string {
+  if (daysUntil < 0) return "bg-hot/15 text-hot border-hot/30";
+  if (daysUntil <= 1) return "bg-warm/15 text-warm border-warm/30";
+  if (daysUntil <= 3) return "bg-gold/15 text-gold border-gold/30";
+  return "bg-info/10 text-info border-info/30";
+}
+
+function milestoneLabel(daysUntil: number): string {
+  if (daysUntil < 0) return `${-daysUntil}일 지남`;
+  if (daysUntil === 0) return "오늘";
+  if (daysUntil === 1) return "내일";
+  return `${daysUntil}일 후`;
+}
 
 export function Card({ customer: c, onClick, dragging }: Props) {
   const sortable = useSortable({ id: c.id });
@@ -60,12 +75,15 @@ export function Card({ customer: c, onClick, dragging }: Props) {
   );
   const isOverdue = dueDays !== null && dueDays > 0 && isActive;
   const lastContact = c.firstContact;
+  const milestone = nextMilestone(c);
+  const showMilestone =
+    milestone !== null && milestone.daysUntil <= 3 && c.stage !== "lost";
 
-  const vehicle = [c.vehicleClass, c.vehicleInterest]
-    .filter((v) => v && v !== c.vehicleClass)
-    .filter(Boolean)
-    .join(" · ");
   const vehicleDisplay = c.vehicleInterest || c.vehicleClass || "";
+  const vehicleSecondary =
+    c.vehicleInterest && c.vehicleClass && c.vehicleInterest !== c.vehicleClass
+      ? c.vehicleClass
+      : "";
 
   return (
     <div
@@ -119,8 +137,8 @@ export function Card({ customer: c, onClick, dragging }: Props) {
       {vehicleDisplay && (
         <div className="mb-1.5 truncate text-[11.5px] font-medium text-gold">
           {vehicleDisplay}
-          {vehicle && vehicle !== vehicleDisplay && (
-            <span className="text-subtle"> · {vehicle}</span>
+          {vehicleSecondary && (
+            <span className="text-subtle"> · {vehicleSecondary}</span>
           )}
         </div>
       )}
@@ -156,6 +174,19 @@ export function Card({ customer: c, onClick, dragging }: Props) {
           </div>
         )}
       </div>
+
+      {showMilestone && milestone && (
+        <div
+          className={cn(
+            "mb-1.5 flex items-center justify-between gap-2 rounded border px-2 py-1 text-[10px]",
+            milestoneStyle(milestone.daysUntil),
+          )}
+          title={`${milestone.label} 골든타임`}
+        >
+          <span className="font-semibold">{milestone.label}</span>
+          <span>{milestoneLabel(milestone.daysUntil)}</span>
+        </div>
+      )}
 
       <div className="flex items-center justify-between gap-2 text-[10.5px]">
         <div className="flex items-center gap-1 text-subtle">
