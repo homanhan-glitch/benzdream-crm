@@ -36,18 +36,13 @@ export function Board({ initialCustomers }: Props) {
   );
 
   const byStage = useMemo(() => {
-    const m: Record<StageId, Customer[]> = {
-      lead: [],
-      consult: [],
-      quote: [],
-      negotiate: [],
-      contract: [],
-      schedule: [],
-      delivered: [],
-      aftercare: [],
-      lost: [],
-    };
-    for (const c of customers) m[c.stage].push(c);
+    const m = Object.fromEntries(
+      STAGES.map((s) => [s.id, [] as Customer[]]),
+    ) as Record<StageId, Customer[]>;
+    for (const c of customers) {
+      const list = m[c.stage] ?? m.first_contact;
+      list.push(c);
+    }
     return m;
   }, [customers]);
 

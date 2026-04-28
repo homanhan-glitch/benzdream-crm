@@ -1,12 +1,10 @@
 import { Client } from "@notionhq/client";
-import type { Customer } from "./types";
+import type { Customer, FetchResult } from "./types";
 import { mapStage } from "./stages";
+import { parseGrade, parseHeat, parseRank } from "./utils";
 import { MOCK_CUSTOMERS } from "./mock";
 
-type RichProp = {
-  type: string;
-  [key: string]: unknown;
-};
+type RichProp = { type: string; [key: string]: unknown };
 
 function getPlain(prop: RichProp | undefined): string {
   if (!prop) return "";
@@ -44,26 +42,20 @@ function getPlain(prop: RichProp | undefined): string {
     }
     case "checkbox":
       return prop.checkbox ? "true" : "";
-    case "people": {
-      const v = (prop.people as Array<{ name?: string }>) ?? [];
-      return v.map((p) => p.name ?? "").join(", ");
+    case "formula": {
+      const f = prop.formula as { type: string; [k: string]: unknown };
+      if (!f) return "";
+      const inner = f[f.type];
+      if (typeof inner === "string") return inner;
+      if (typeof inner === "number") return String(inner);
+      if (inner && typeof inner === "object" && "start" in inner) {
+        return (inner as { start: string }).start ?? "";
+      }
+      return "";
     }
     default:
       return "";
   }
-}
-
-function pickProp(props: Record<string, RichProp>, candidates: string[]): RichProp | undefined {
-  const keys = Object.keys(props);
-  for (const c of candidates) {
-    const exact = keys.find((k) => k.toLowerCase() === c.toLowerCase());
-    if (exact) return props[exact];
-  }
-  for (const c of candidates) {
-    const partial = keys.find((k) => k.toLowerCase().includes(c.toLowerCase()));
-    if (partial) return props[partial];
-  }
-  return undefined;
 }
 
 type NotionPage = {
@@ -76,53 +68,44 @@ type NotionPage = {
 
 function pageToCustomer(page: NotionPage): Customer {
   const p = page.properties;
-  const name =
-    getPlain(pickProp(p, ["이름", "고객명", "Name", "성함"])) || "(이름 없음)";
-  const stageRaw = getPlain(pickProp(p, ["단계", "Status", "스테이지", "상태", "진행"]));
-  const phone = getPlain(pickProp(p, ["전화", "연락처", "Phone", "전화번호"]));
-  const vehicle = getPlain(pickProp(p, ["관심차종", "차종", "모델", "Vehicle", "Model"]));
-  const trim = getPlain(pickProp(p, ["트림", "Trim"]));
-  const color = getPlain(pickProp(p, ["색상", "Color", "외장색"]));
-  const budget = getPlain(pickProp(p, ["예산", "Budget", "금액"]));
-  const timeframe = getPlain(pickProp(p, ["시점", "Timeframe", "구매시기", "구매시점"]));
-  const decisionMaker = getPlain(pickProp(p, ["결정권자", "Decision Maker", "의사결정"]));
-  const issues = getPlain(pickProp(p, ["이슈", "Issues", "Concern", "이슈/우려"]));
-  const source = getPlain(pickProp(p, ["유입", "Source", "유입경로"]));
-  const lastContact = getPlain(pickProp(p, ["마지막접촉", "Last Contact", "최근통화", "최근접촉"]));
-  const nextAction = getPlain(pickProp(p, ["다음액션", "Next Action", "다음행동"]));
-  const nextDue = getPlain(pickProp(p, ["기한", "Due", "다음일정"]));
-  const notes = getPlain(pickProp(p, ["메모", "Notes", "비고"]));
-  const transcriptUrl = getPlain(pickProp(p, ["transcript", "Whisper", "녹취"]));
+  const get = (key: string) => getPlain(p[key]);
 
+  const stageRaw = get("관리단계");
   return {
     id: page.id,
-    name,
+    name: get("Name") || "(이름 없음)",
+    phone: get("Phone") || undefined,
     stage: mapStage(stageRaw),
     stageRaw,
-    phone: phone || undefined,
-    vehicle: vehicle || undefined,
-    trim: trim || undefined,
-    color: color || undefined,
-    budget: budget || undefined,
-    timeframe: timeframe || undefined,
-    decisionMaker: decisionMaker || undefined,
-    issues: issues || undefined,
-    source: source || undefined,
-    lastContactDate: lastContact || page.last_edited_time?.slice(0, 10),
-    nextActionLabel: nextAction || undefined,
-    nextActionDue: nextDue || undefined,
-    notes: notes || undefined,
-    transcriptUrl: transcriptUrl || undefined,
+    heat: parseHeat(get("고객온도")),
+    rank: parseRank(get("Rank")),
+    grade: parseGrade(get("고객등급")),
+    salesStatus: (get("Sales Status") || undefined) as Customer["salesStatus"],
+    vehicleClass: get("클래스") || undefined,
+    vehicleInterest: get("관심차종") || undefined,
+    competitor: get("경쟁차종") || undefined,
+    budget: get("예산범위") || undefined,
+    criticalFactor: get("핵심변수") || undefined,
+    notes: get("특이사항") || undefined,
+    source: get("유입경로") || undefined,
+    channel: get("채널") || undefined,
+    age: get("나이대") || undefined,
+    gender: get("성별") || undefined,
+    buyMethod: get("구매방법") || undefined,
+    firstContact: get("1st Contact") || undefined,
+    nextContact: get("Next Contact") || undefined,
+    contractDate: get("계약일") || undefined,
+    scheduledDelivery: get("출고예정일") || undefined,
+    deliveredDate: get("출고일") || undefined,
+    finalResult: get("최종결과") || undefined,
+    exteriorColor: get("외장색") || undefined,
+    interiorColor: get("내장색") || undefined,
+    carNumber: get("차량번호") || undefined,
+    deliveredModel: get("출고모델") || undefined,
     notionUrl: page.url,
     createdAt: page.created_time?.slice(0, 10),
   };
 }
-
-export type FetchResult = {
-  customers: Customer[];
-  source: "notion" | "mock";
-  notionError?: string;
-};
 
 export async function fetchCards(): Promise<FetchResult> {
   const token = process.env.NOTION_TOKEN;
@@ -132,38 +115,35 @@ export async function fetchCards(): Promise<FetchResult> {
     return {
       customers: MOCK_CUSTOMERS,
       source: "mock",
-      notionError: "NOTION_TOKEN 또는 NOTION_DB_ID 미설정 — mock 데이터 사용",
+      notionError: "NOTION_TOKEN 또는 NOTION_DB_ID 미설정 — mock 데이터",
     };
   }
 
   try {
     const notion = new Client({ auth: token });
 
-    let resolvedDbId: string | null = null;
+    let resolvedDbId = dbId;
     try {
       await notion.databases.retrieve({ database_id: dbId });
-      resolvedDbId = dbId;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes("is a page") || msg.includes("not a database")) {
-        try {
-          const children = await notion.blocks.children.list({
-            block_id: dbId,
-            page_size: 100,
-          });
-          type Block = { type: string; id: string };
-          const blocks = children.results as unknown as Block[];
-          const dbBlock = blocks.find((b) => b.type === "child_database");
-          if (dbBlock) resolvedDbId = dbBlock.id;
-        } catch {}
-        if (!resolvedDbId) {
+        const children = await notion.blocks.children.list({
+          block_id: dbId,
+          page_size: 100,
+        });
+        type Block = { type: string; id: string };
+        const blocks = children.results as unknown as Block[];
+        const dbBlock = blocks.find((b) => b.type === "child_database");
+        if (!dbBlock) {
           return {
             customers: MOCK_CUSTOMERS,
             source: "mock",
             notionError:
-              "Notion ID가 페이지를 가리키고 있고 그 안에 데이터베이스가 없습니다. DB의 URL을 보내주세요.",
+              "Notion ID가 페이지를 가리키고 그 안에 DB 없음. DB URL을 NOTION_DB_ID로 사용.",
           };
         }
+        resolvedDbId = dbBlock.id;
       } else {
         throw e;
       }
@@ -171,16 +151,17 @@ export async function fetchCards(): Promise<FetchResult> {
 
     const dbInfo = (await notion.databases.retrieve({
       database_id: resolvedDbId,
-    })) as { data_sources?: Array<{ id: string; name: string }> };
+    })) as { data_sources?: Array<{ id: string }> };
     const dataSourceId = dbInfo.data_sources?.[0]?.id;
     if (!dataSourceId) {
       return {
         customers: MOCK_CUSTOMERS,
         source: "mock",
         notionError:
-          "Notion DB에 data source가 없음 (Integration이 DB에 공유되지 않았을 가능성)",
+          "DB에 data source 없음 — Integration이 DB에 공유됐는지 확인 필요",
       };
     }
+
     const res = await notion.dataSources.query({
       data_source_id: dataSourceId,
       page_size: 100,
@@ -189,20 +170,17 @@ export async function fetchCards(): Promise<FetchResult> {
     const customers = pages
       .filter((p) => p && p.properties)
       .map(pageToCustomer);
+
     if (customers.length === 0) {
       return {
         customers: MOCK_CUSTOMERS,
         source: "mock",
-        notionError: "Notion DB가 비어있거나 Integration이 DB에 공유되지 않음",
+        notionError: "Notion DB가 비어있거나 권한 부족",
       };
     }
     return { customers, source: "notion" };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return {
-      customers: MOCK_CUSTOMERS,
-      source: "mock",
-      notionError: msg,
-    };
+    return { customers: MOCK_CUSTOMERS, source: "mock", notionError: msg };
   }
 }

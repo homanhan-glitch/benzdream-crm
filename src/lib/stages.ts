@@ -5,125 +5,43 @@ export type Stage = {
   label: string;
   short: string;
   accent: string;
-  description: string;
+  notion: string;
 };
 
+// Mirrors Notion 관리단계 select options 1:1.
+// Order = visual left→right pipeline.
 export const STAGES: Stage[] = [
-  {
-    id: "lead",
-    label: "신규리드",
-    short: "리드",
-    accent: "#60a5fa",
-    description: "유입 직후. 첫 컨택 24h 내 팔로업.",
-  },
-  {
-    id: "consult",
-    label: "상담중",
-    short: "상담",
-    accent: "#a78bfa",
-    description: "니즈 파악 / 5요소 수집 단계.",
-  },
-  {
-    id: "quote",
-    label: "견적/시승",
-    short: "견적·시승",
-    accent: "#fbbf24",
-    description: "견적서 발송 또는 시승 예약.",
-  },
-  {
-    id: "negotiate",
-    label: "협상",
-    short: "협상",
-    accent: "#fb923c",
-    description: "가격·조건 협의.",
-  },
-  {
-    id: "contract",
-    label: "계약(배정)",
-    short: "계약",
-    accent: "#34d399",
-    description: "계약 완료, 차량 배정.",
-  },
-  {
-    id: "schedule",
-    label: "출고일정",
-    short: "출고일정",
-    accent: "#22d3ee",
-    description: "출고일 조율, 탁송 준비.",
-  },
-  {
-    id: "delivered",
-    label: "출고완료",
-    short: "출고",
-    accent: "#10b981",
-    description: "차량 인도 완료.",
-  },
-  {
-    id: "aftercare",
-    label: "사후관리",
-    short: "사후",
-    accent: "#94a3b8",
-    description: "D+1 / D+7 / D+30 / D+180 / D+365.",
-  },
-  {
-    id: "lost",
-    label: "이탈",
-    short: "이탈",
-    accent: "#6b7280",
-    description: "거래 중단 또는 경쟁사 이동.",
-  },
+  { id: "first_contact", label: "첫컨택", short: "첫컨택", accent: "#9ca3af", notion: "첫컨택" },
+  { id: "fu_1", label: "1st F/U", short: "1차 F/U", accent: "#60a5fa", notion: "1st F/U" },
+  { id: "fu_2", label: "2nd F/U", short: "2차 F/U", accent: "#a78bfa", notion: "2nd F/U" },
+  { id: "decision", label: "의사결정", short: "의사결정", accent: "#fb923c", notion: "의사결정" },
+  { id: "contract", label: "계약진행", short: "계약", accent: "#fbbf24", notion: "계약진행" },
+  { id: "delivered", label: "출고완료", short: "출고완료", accent: "#34d399", notion: "출고완료" },
+  { id: "aftercare", label: "출고후관리", short: "사후관리", accent: "#10b981", notion: "출고후관리" },
+  { id: "long_touch", label: "장기터치", short: "장기터치", accent: "#a16207", notion: "장기터치" },
+  { id: "lost", label: "이탈관리", short: "이탈", accent: "#ef4444", notion: "이탈관리" },
 ];
 
 export const STAGE_BY_ID = Object.fromEntries(
   STAGES.map((s) => [s.id, s]),
 ) as Record<StageId, Stage>;
 
-const STAGE_ALIASES: Record<string, StageId> = {
-  "신규리드": "lead",
-  "신규": "lead",
-  "리드": "lead",
-  "lead": "lead",
-  "new": "lead",
-  "상담중": "consult",
-  "상담": "consult",
-  "consult": "consult",
-  "consultation": "consult",
-  "견적/시승": "quote",
-  "견적": "quote",
-  "시승": "quote",
-  "견적시승": "quote",
-  "quote": "quote",
-  "test drive": "quote",
-  "협상": "negotiate",
-  "negotiate": "negotiate",
-  "negotiation": "negotiate",
-  "계약(배정)": "contract",
-  "계약": "contract",
-  "배정": "contract",
-  "contract": "contract",
-  "출고일정": "schedule",
-  "출고": "schedule",
-  "schedule": "schedule",
-  "delivery schedule": "schedule",
-  "출고완료": "delivered",
-  "delivered": "delivered",
-  "사후관리": "aftercare",
-  "사후": "aftercare",
-  "aftercare": "aftercare",
-  "follow-up": "aftercare",
-  "이탈": "lost",
-  "lost": "lost",
-  "drop": "lost",
-  "drop off": "lost",
-};
+const NOTION_TO_ID: Record<string, StageId> = Object.fromEntries(
+  STAGES.map((s) => [s.notion, s.id]),
+) as Record<string, StageId>;
 
 export function mapStage(raw: string | undefined | null): StageId {
-  if (!raw) return "lead";
-  const key = raw.trim().toLowerCase();
-  if (STAGE_ALIASES[key]) return STAGE_ALIASES[key];
-  // try by partial match against label or alias keys
-  for (const [alias, id] of Object.entries(STAGE_ALIASES)) {
-    if (key.includes(alias.toLowerCase())) return id;
+  if (!raw) return "first_contact";
+  const trimmed = raw.trim();
+  if (NOTION_TO_ID[trimmed]) return NOTION_TO_ID[trimmed];
+  // tolerant fallback
+  const lc = trimmed.toLowerCase();
+  for (const s of STAGES) {
+    if (s.notion.toLowerCase() === lc) return s.id;
   }
-  return "lead";
+  return "first_contact";
+}
+
+export function stageToNotion(id: StageId): string {
+  return STAGE_BY_ID[id].notion;
 }

@@ -5,11 +5,10 @@ import { CSS } from "@dnd-kit/utilities";
 import type { Customer } from "@/lib/types";
 import {
   cn,
-  computeHeat,
   daysBetween,
   formatDueDay,
   formatRelativeDay,
-  HEAT_STYLE,
+  HEAT_META,
   maskPhone,
 } from "@/lib/utils";
 
@@ -19,12 +18,19 @@ type Props = {
   dragging?: boolean;
 };
 
-const HEAT_LABEL: Record<string, string> = {
-  hot: "핫",
-  warm: "주의",
-  cool: "정상",
-  risk: "위험",
-  neutral: "—",
+const RANK_META: Record<string, { label: string; cls: string }> = {
+  A: { label: "A·1M", cls: "bg-hot/15 text-hot border-hot/30" },
+  B: { label: "B·3M", cls: "bg-warm/15 text-warm border-warm/30" },
+  C: { label: "C·6M+", cls: "bg-info/10 text-info border-info/30" },
+  unknown: { label: "—", cls: "bg-surface-3 text-subtle border-line" },
+};
+
+const GRADE_META: Record<string, { label: string; cls: string }> = {
+  VIP: { label: "VIP", cls: "bg-gold/20 text-gold border-gold/40" },
+  A: { label: "A", cls: "bg-cool/15 text-cool border-cool/30" },
+  B: { label: "B", cls: "bg-info/10 text-info border-info/30" },
+  F: { label: "F", cls: "bg-subtle/15 text-subtle border-line" },
+  unknown: { label: "", cls: "" },
 };
 
 export function Card({ customer: c, onClick, dragging }: Props) {
@@ -44,16 +50,22 @@ export function Card({ customer: c, onClick, dragging }: Props) {
     opacity: isDragging && !dragging ? 0.35 : 1,
   };
 
-  const lastDays = daysBetween(c.lastContactDate);
-  const dueDays = daysBetween(c.nextActionDue);
-  const heat = computeHeat({
-    stage: c.stage,
-    lastContactDays: lastDays,
-    dueDays,
-  });
-  const heatStyle = HEAT_STYLE[heat];
+  const heatMeta = HEAT_META[c.heat];
+  const rankMeta = RANK_META[c.rank];
+  const gradeMeta = GRADE_META[c.grade];
 
-  const isOverdue = dueDays !== null && dueDays > 0 && c.stage !== "delivered" && c.stage !== "aftercare" && c.stage !== "lost";
+  const dueDays = daysBetween(c.nextContact);
+  const isActive = !["delivered", "aftercare", "long_touch", "lost"].includes(
+    c.stage,
+  );
+  const isOverdue = dueDays !== null && dueDays > 0 && isActive;
+  const lastContact = c.firstContact;
+
+  const vehicle = [c.vehicleClass, c.vehicleInterest]
+    .filter((v) => v && v !== c.vehicleClass)
+    .filter(Boolean)
+    .join(" · ");
+  const vehicleDisplay = c.vehicleInterest || c.vehicleClass || "";
 
   return (
     <div
@@ -73,36 +85,50 @@ export function Card({ customer: c, onClick, dragging }: Props) {
       )}
     >
       <div className="mb-1.5 flex items-start justify-between gap-2">
-        <div className="flex items-center gap-1.5 truncate">
+        <div className="flex min-w-0 items-center gap-1.5">
           <span className="truncate font-semibold tracking-tight text-fg">
             {c.name}
           </span>
-          {c.honorific && (
-            <span className="text-[10px] text-subtle">{c.honorific}</span>
-          )}
+          <span className="shrink-0 text-[10px] text-subtle">고객님</span>
         </div>
-        <span
-          className={cn(
-            "shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase",
-            heatStyle.dot,
-            "text-bg",
+        <div className="flex shrink-0 items-center gap-1">
+          {c.grade !== "unknown" && (
+            <span
+              className={cn(
+                "rounded border px-1.5 py-0.5 text-[9px] font-semibold",
+                gradeMeta.cls,
+              )}
+            >
+              {gradeMeta.label}
+            </span>
           )}
-        >
-          {HEAT_LABEL[heat]}
-        </span>
+          <span
+            className={cn(
+              "rounded px-1.5 py-0.5 text-[9px] font-semibold",
+              heatMeta.bg,
+              heatMeta.fg,
+            )}
+            title={`고객온도: ${heatMeta.label}`}
+          >
+            {heatMeta.emoji}
+            {c.heat !== "unknown" ? heatMeta.label : ""}
+          </span>
+        </div>
       </div>
 
-      {(c.vehicle || c.trim) && (
+      {vehicleDisplay && (
         <div className="mb-1.5 truncate text-[11.5px] font-medium text-gold">
-          {c.vehicle}
-          {c.trim ? ` · ${c.trim}` : ""}
+          {vehicleDisplay}
+          {vehicle && vehicle !== vehicleDisplay && (
+            <span className="text-subtle"> · {vehicle}</span>
+          )}
         </div>
       )}
 
       <div className="mb-2 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10.5px] text-muted">
         {c.phone && (
           <div className="truncate">
-            <span className="text-subtle">연락처</span>{" "}
+            <span className="text-subtle">연락</span>{" "}
             <span className="font-mono">{maskPhone(c.phone)}</span>
           </div>
         )}
@@ -111,14 +137,22 @@ export function Card({ customer: c, onClick, dragging }: Props) {
             <span className="text-subtle">예산</span> {c.budget}
           </div>
         )}
-        {c.timeframe && (
+        {c.rank !== "unknown" && (
           <div className="truncate">
-            <span className="text-subtle">시점</span> {c.timeframe}
+            <span className="text-subtle">시점</span>{" "}
+            <span
+              className={cn(
+                "rounded border px-1 py-px text-[9.5px]",
+                rankMeta.cls,
+              )}
+            >
+              {rankMeta.label}
+            </span>
           </div>
         )}
-        {c.decisionMaker && (
-          <div className="truncate">
-            <span className="text-subtle">결정</span> {c.decisionMaker}
+        {c.criticalFactor && (
+          <div className="truncate" title={c.criticalFactor}>
+            <span className="text-subtle">핵심</span> {c.criticalFactor}
           </div>
         )}
       </div>
@@ -126,23 +160,27 @@ export function Card({ customer: c, onClick, dragging }: Props) {
       <div className="flex items-center justify-between gap-2 text-[10.5px]">
         <div className="flex items-center gap-1 text-subtle">
           <span>최근</span>
-          <span className="text-muted">
-            {formatRelativeDay(c.lastContactDate)}
-          </span>
+          <span className="text-muted">{formatRelativeDay(lastContact)}</span>
         </div>
-        {c.nextActionLabel && (
+        {c.nextContact ? (
           <div
             className={cn(
               "truncate text-right",
-              isOverdue ? "text-hot" : "text-fg/80",
+              isOverdue ? "text-hot font-medium" : "text-fg/80",
             )}
-            title={c.nextActionLabel}
+            title={`다음 컨택: ${c.nextContact}`}
           >
-            {c.nextActionLabel} ·{" "}
+            <span className="text-subtle">다음</span>{" "}
             <span className="font-medium">
-              {formatDueDay(c.nextActionDue)}
+              {formatDueDay(c.nextContact)}
             </span>
           </div>
+        ) : (
+          c.competitor && (
+            <div className="truncate text-right text-warm" title={c.competitor}>
+              vs {c.competitor}
+            </div>
+          )
         )}
       </div>
     </div>

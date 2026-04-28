@@ -4,7 +4,12 @@ import { useEffect } from "react";
 import { X, Phone, MessageSquare, ExternalLink } from "lucide-react";
 import type { Customer } from "@/lib/types";
 import { STAGE_BY_ID } from "@/lib/stages";
-import { formatRelativeDay, formatDueDay, maskPhone } from "@/lib/utils";
+import {
+  formatDueDay,
+  formatRelativeDay,
+  HEAT_META,
+  maskPhone,
+} from "@/lib/utils";
 
 type Props = {
   customer: Customer;
@@ -21,6 +26,7 @@ export function CardDetail({ customer: c, onClose }: Props) {
   }, [onClose]);
 
   const stage = STAGE_BY_ID[c.stage];
+  const heatMeta = HEAT_META[c.heat];
 
   return (
     <>
@@ -28,25 +34,36 @@ export function CardDetail({ customer: c, onClose }: Props) {
         className="fixed inset-0 z-40 bg-bg/70 backdrop-blur-sm fade-in"
         onClick={onClose}
       />
-      <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[440px] flex-col border-l border-line bg-surface shadow-2xl slide-in-right">
+      <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[460px] flex-col border-l border-line bg-surface shadow-2xl slide-in-right">
         <div className="flex items-center justify-between gap-2 border-b border-line bg-surface-2 px-5 py-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="truncate text-[15px] font-semibold text-gold">
-                {c.name}
+                {c.name} <span className="text-[12px] text-subtle">고객님</span>
               </h2>
-              {c.honorific && (
-                <span className="text-[11px] text-subtle">{c.honorific}</span>
+              {c.grade !== "unknown" && (
+                <span className="rounded border border-gold/40 bg-gold/15 px-1.5 py-0.5 text-[10px] font-semibold text-gold">
+                  {c.grade === "VIP" ? "🌟VIP" : c.grade}
+                </span>
               )}
             </div>
-            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted">
-              <span
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ background: stage.accent }}
-              />
-              <span>{stage.label}</span>
-              {c.stageRaw && c.stageRaw !== stage.label && (
-                <span className="text-subtle">· (Notion: {c.stageRaw})</span>
+            <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted">
+              <div className="flex items-center gap-1">
+                <span
+                  className="h-1.5 w-1.5 rounded-full"
+                  style={{ background: stage.accent }}
+                />
+                <span>{stage.label}</span>
+              </div>
+              <span className="text-line">·</span>
+              <span className={heatMeta.fg}>
+                {heatMeta.emoji} {heatMeta.label}
+              </span>
+              {c.salesStatus && (
+                <>
+                  <span className="text-line">·</span>
+                  <span>{c.salesStatus}</span>
+                </>
               )}
             </div>
           </div>
@@ -77,94 +94,119 @@ export function CardDetail({ customer: c, onClose }: Props) {
             </div>
           )}
 
-          <Section title="기본 정보">
-            <Field label="이름" value={c.name + (c.honorific ? ` ${c.honorific}` : "")} />
-            <Field label="연락처" value={c.phone ? maskPhone(c.phone) : "—"} mono />
+          <Section title="고객 정보">
+            <Field label="이름" value={c.name} />
+            <Field
+              label="연락처"
+              value={c.phone ? maskPhone(c.phone) : "—"}
+              mono
+            />
+            <Field
+              label="등급"
+              value={c.grade === "unknown" ? "—" : c.grade}
+            />
+            <Field
+              label="구매시점"
+              value={
+                c.rank === "A"
+                  ? "A · 1개월 이내"
+                  : c.rank === "B"
+                    ? "B · 3개월 이내"
+                    : c.rank === "C"
+                      ? "C · 6개월 이상"
+                      : "—"
+              }
+            />
+            <Field label="나이대 / 성별" value={[c.age, c.gender].filter(Boolean).join(" · ") || "—"} />
             <Field label="유입경로" value={c.source ?? "—"} />
-            <Field label="등록일" value={c.createdAt ?? "—"} />
+            <Field label="채널" value={c.channel ?? "—"} />
           </Section>
 
           <Section title="관심 차량">
-            <Field label="차종" value={c.vehicle ?? "—"} highlight />
-            <Field label="트림" value={c.trim ?? "—"} />
-            <Field label="색상" value={c.color ?? "—"} />
-            <Field label="예산" value={c.budget ?? "—"} />
+            <Field label="클래스" value={c.vehicleClass ?? "—"} highlight />
+            <Field label="차종" value={c.vehicleInterest ?? "—"} />
+            <Field label="외장색" value={c.exteriorColor ?? "—"} />
+            <Field label="내장색" value={c.interiorColor ?? "—"} />
+            <Field label="구매방법" value={c.buyMethod ?? "—"} />
+            <Field label="예산범위" value={c.budget ?? "—"} />
+            {c.competitor && (
+              <Field label="경쟁차종" value={c.competitor} />
+            )}
           </Section>
 
-          <Section title="니즈 5요소">
-            <Field label="구매시점" value={c.timeframe ?? "—"} />
-            <Field label="결정권자" value={c.decisionMaker ?? "—"} />
-            <Field label="이슈/우려" value={c.issues ?? "—"} />
-          </Section>
-
-          <Section title="액션">
-            <Field
-              label="마지막 접촉"
-              value={`${c.lastContactDate ?? "—"}${c.lastContactDate ? ` (${formatRelativeDay(c.lastContactDate)})` : ""}`}
-            />
-            <Field
-              label="다음 액션"
-              value={c.nextActionLabel ?? "—"}
-            />
-            <Field
-              label="기한"
-              value={`${c.nextActionDue ?? "—"}${c.nextActionDue ? ` (${formatDueDay(c.nextActionDue)})` : ""}`}
-            />
-          </Section>
-
-          {c.notes && (
-            <Section title="메모">
+          <Section title="핵심 변수 / 특이사항">
+            {c.criticalFactor && (
+              <p className="rounded-md border border-warm/30 bg-warm/10 p-3 text-[12.5px] leading-relaxed text-warm/90">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-warm">
+                  핵심
+                </span>
+                <br />
+                {c.criticalFactor}
+              </p>
+            )}
+            {c.notes && (
               <p className="whitespace-pre-wrap rounded-md border border-line bg-bg-2 p-3 text-[12.5px] leading-relaxed text-muted">
                 {c.notes}
               </p>
+            )}
+            {!c.criticalFactor && !c.notes && (
+              <p className="text-[12px] text-subtle">기록 없음</p>
+            )}
+          </Section>
+
+          <Section title="일정">
+            <Field
+              label="첫 컨택"
+              value={
+                c.firstContact
+                  ? `${c.firstContact} (${formatRelativeDay(c.firstContact)})`
+                  : "—"
+              }
+            />
+            <Field
+              label="다음 컨택"
+              value={
+                c.nextContact
+                  ? `${c.nextContact} (${formatDueDay(c.nextContact)})`
+                  : "—"
+              }
+            />
+            {c.contractDate && (
+              <Field label="계약일" value={c.contractDate} />
+            )}
+            {c.scheduledDelivery && (
+              <Field label="출고예정일" value={c.scheduledDelivery} />
+            )}
+            {c.deliveredDate && (
+              <Field label="출고일" value={c.deliveredDate} />
+            )}
+          </Section>
+
+          {(c.deliveredModel || c.carNumber || c.finalResult) && (
+            <Section title="출고 정보">
+              {c.deliveredModel && (
+                <Field label="출고모델" value={c.deliveredModel} highlight />
+              )}
+              {c.carNumber && (
+                <Field label="차량번호" value={c.carNumber} mono />
+              )}
+              {c.finalResult && (
+                <Field label="최종결과" value={c.finalResult} />
+              )}
             </Section>
           )}
 
-          {c.history && c.history.length > 0 && (
-            <Section title="상담 이력">
-              <div className="flex flex-col gap-2">
-                {c.history.map((h, i) => (
-                  <div
-                    key={i}
-                    className="rounded-md border border-line bg-bg-2 px-3 py-2"
-                  >
-                    <div className="mb-0.5 flex items-center justify-between text-[11px]">
-                      <span className="font-medium text-gold-2">{h.type}</span>
-                      <span className="text-subtle">{h.date}</span>
-                    </div>
-                    <p className="text-[12.5px] leading-relaxed text-muted">
-                      {h.note}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </Section>
-          )}
-
-          {(c.transcriptUrl || c.notionUrl) && (
+          {c.notionUrl && (
             <Section title="외부 링크">
-              {c.transcriptUrl && (
-                <a
-                  href={c.transcriptUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center justify-between rounded-md border border-line bg-bg-2 px-3 py-2 text-[12px] text-muted transition-colors hover:border-gold/40 hover:text-fg"
-                >
-                  <span>Whisper 통화 기록</span>
-                  <ExternalLink size={13} />
-                </a>
-              )}
-              {c.notionUrl && (
-                <a
-                  href={c.notionUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center justify-between rounded-md border border-line bg-bg-2 px-3 py-2 text-[12px] text-muted transition-colors hover:border-gold/40 hover:text-fg"
-                >
-                  <span>Notion 페이지에서 열기</span>
-                  <ExternalLink size={13} />
-                </a>
-              )}
+              <a
+                href={c.notionUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center justify-between rounded-md border border-line bg-bg-2 px-3 py-2 text-[12px] text-muted transition-colors hover:border-gold/40 hover:text-fg"
+              >
+                <span>Notion 페이지에서 열기</span>
+                <ExternalLink size={13} />
+              </a>
             </Section>
           )}
         </div>
@@ -177,7 +219,13 @@ export function CardDetail({ customer: c, onClose }: Props) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className="flex flex-col gap-1.5">
       <h3 className="text-[11px] font-semibold uppercase tracking-wider text-subtle">
